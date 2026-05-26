@@ -1,0 +1,31 @@
+{
+  "name": "js_code",
+  "version": "1.0.0",
+  "description": "大屏控制服务",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "build": "node build.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@jitsi/robotjs": "^0.6.22",
+    "ws": "^8.21.0"
+  },
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "assets": [
+      "node_modules/@jitsi/robotjs/build/Release/*.node",
+      "node_modules/@jitsi/robotjs/build/Release/**"
+    ],
+    "outputPath": "dist"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}
