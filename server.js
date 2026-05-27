@@ -59,33 +59,57 @@ const WEB_SOCKET_PORT = CLI_CONFIG.wsPort;
 const UDP_BROADCAST_PORT = CLI_CONFIG.udpPort;
 const HEARTBEAT_TIMEOUT = 60000;
 
-// 1. 获取本机IP
+// 目标子网前缀（限制 UDP 广播只走这个网段）
+const TARGET_SUBNET = '192.168.31.';
+
+// 1. 获取本机IP（优先匹配目标子网）
 function getLocalIP() {
   if (CLI_CONFIG.ipAddress) {
     return CLI_CONFIG.ipAddress;
   }
   
   const interfaces = os.networkInterfaces();
+  let fallback = null;
+
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+      if (iface.family === 'IPv4' && !iface.internal) {
+        if (iface.address.startsWith(TARGET_SUBNET)) {
+          return iface.address;
+        }
+        if (!fallback) fallback = iface.address;
+      }
     }
   }
-  return '127.0.0.1';
+  return fallback || '127.0.0.1';
 }
 const LOCAL_IP = getLocalIP();
 
-// 2. UDP广播：每2秒向局域网发送【设备名称+IP】（平板自动搜索）
+// 计算目标子网的广播地址
+function getBroadcastIP() {
+  if (!LOCAL_IP.startsWith(TARGET_SUBNET)) {
+    // 非目标子网，回退全网广播
+    console.warn(`⚠ 本机IP ${LOCAL_IP} 不在 ${TARGET_SUBNET}x 网段，使用全局广播`);
+    return '255.255.255.255';
+  }
+  return TARGET_SUBNET + '255';
+}
+const BROADCAST_IP = getBroadcastIP();
+
+// 2. UDP广播：每2秒向目标子网发送【设备名称+IP】（平板自动搜索）
 const udpClient = dgram.createSocket('udp4');
-udpClient.bind(() => udpClient.setBroadcast(true));
+udpClient.bind({ address: LOCAL_IP }, () => {
+  udpClient.setBroadcast(true);
+  console.log(`📡 UDP 广播: ${LOCAL_IP} → ${BROADCAST_IP}:${UDP_BROADCAST_PORT}`);
+});
 setInterval(() => {
   const msg = JSON.stringify({ name: DEVICE_NAME, ip: LOCAL_IP, port: WEB_SOCKET_PORT });
-  udpClient.send(Buffer.from(msg), UDP_BROADCAST_PORT, '255.255.255.255');
+  udpClient.send(Buffer.from(msg), UDP_BROADCAST_PORT, BROADCAST_IP);
 }, 2000);
 
 // 3. WebSocket服务（接收平板指令）
 const wss = new WebSocket.Server({ port: WEB_SOCKET_PORT });
-console.log(`✅ ${DEVICE_NAME} 启动成功 | IP: ${LOCAL_IP}:${WEB_SOCKET_PORT}`);
+console.log(`✅ ${DEVICE_NAME} 启动成功 | WS: ${LOCAL_IP}:${WEB_SOCKET_PORT} | UDP广播: ${BROADCAST_IP}:${UDP_BROADCAST_PORT}`);
 
 // 4. 指令映射（完整功能支持）
 const keyMap = {
