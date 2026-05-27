@@ -89,21 +89,70 @@ console.log(`✅ ${DEVICE_NAME} 启动成功 | IP: ${LOCAL_IP}:${WEB_SOCKET_PORT
 
 // 4. 指令映射（完整功能支持）
 const keyMap = {
-  // 方向键
+  // ==================== 方向键 ====================
   arrow_up: 'up', arrow_down: 'down', arrow_left: 'left', arrow_right: 'right',
-  // 功能键
+
+  // ==================== 导航键 ====================
+  key_tab: 'tab', key_home: 'home', key_end: 'end',
+  key_pageup: 'pageup', key_pagedown: 'pagedown',
+
+  // ==================== 编辑键 ====================
   key_space: 'space', key_enter: 'enter', key_esc: 'escape',
-  key_f: 'f', key_f5: 'f5', key_f11: 'f11',
-  // 音量控制
+  key_backspace: 'backspace', key_delete: 'delete', key_insert: 'insert',
+
+  // ==================== 数字键 0-9 ====================
+  key_0: '0', key_1: '1', key_2: '2', key_3: '3', key_4: '4',
+  key_5: '5', key_6: '6', key_7: '7', key_8: '8', key_9: '9',
+
+  // ==================== 字母键 A-Z ====================
+  key_a: 'a', key_b: 'b', key_c: 'c', key_d: 'd', key_e: 'e',
+  key_f: 'f', key_g: 'g', key_h: 'h', key_i: 'i', key_j: 'j',
+  key_k: 'k', key_l: 'l', key_m: 'm', key_n: 'n', key_o: 'o',
+  key_p: 'p', key_q: 'q', key_r: 'r', key_s: 's', key_t: 't',
+  key_u: 'u', key_v: 'v', key_w: 'w', key_x: 'x', key_y: 'y', key_z: 'z',
+
+  // ==================== 功能键 F1-F12 ====================
+  key_f1: 'f1', key_f2: 'f2', key_f3: 'f3', key_f4: 'f4',
+  key_f5: 'f5', key_f6: 'f6', key_f7: 'f7', key_f8: 'f8',
+  key_f9: 'f9', key_f10: 'f10', key_f11: 'f11', key_f12: 'f12',
+
+  // ==================== 符号键（无 Shift） ====================
+  key_minus: '-', key_equal: '=',
+  key_bracket_left: '[', key_bracket_right: ']',
+  key_backslash: '\\', key_semicolon: ';', key_quote: "'",
+  key_comma: ',', key_period: '.', key_slash: '/', key_backtick: '`',
+
+  // ==================== 符号键（Shift 组合） ====================
+  key_at: 'SHIFT:2', key_hash: 'SHIFT:3', key_dollar: 'SHIFT:4',
+  key_percent: 'SHIFT:5', key_caret: 'SHIFT:6', key_ampersand: 'SHIFT:7',
+  key_asterisk: 'SHIFT:8', key_paren_left: 'SHIFT:9', key_paren_right: 'SHIFT:0',
+  key_underscore: 'SHIFT:-', key_plus: 'SHIFT:=', key_tilde: 'SHIFT:`',
+  key_colon: 'SHIFT:;', key_double_quote: "SHIFT:'",
+  key_angle_left: 'SHIFT:,', key_angle_right: 'SHIFT:.', key_question: 'SHIFT:/',
+  key_brace_left: 'SHIFT:[', key_brace_right: 'SHIFT:]', key_pipe: 'SHIFT:\\',
+
+  // ==================== 修饰键（单独按下） ====================
+  key_caps: 'capslock', key_shift: 'shift', key_ctrl: 'control',
+  key_alt: 'alt', key_win: 'command',
+
+  // ==================== 文本输入（需 JSON 格式） ====================
+  key_type: 'TYPE_STRING',
+
+  // ==================== 音量控制 ====================
   vol_up: 'audio_vol_up', vol_down: 'audio_vol_down',
-  // 组合键
-  ctrl_r: 'ctrl_r', ctrl_w: 'ctrl_w', ctrl_pgup: 'ctrl_pgup', ctrl_pgdn: 'ctrl_pgdn',
+
+  // ==================== 组合键 ====================
+  ctrl_r: 'ctrl_r', ctrl_w: 'ctrl_w',
+  ctrl_pgup: 'ctrl_pgup', ctrl_pgdn: 'ctrl_pgdn',
   win_tab: 'win_tab', alt_f4: 'alt_f4',
-  // 文件/链接控制
+
+  // ==================== 文件/链接控制（需 JSON 格式） ====================
   open_web: 'open_web',
-  // 鼠标控制
+
+  // ==================== 鼠标控制（需 JSON 格式） ====================
   mouse_left_click: 'mouse_left', mouse_right_click: 'mouse_right',
-  mouse_move: 'mouse_move', mouse_drag: 'mouse_drag'
+  mouse_move: 'mouse_move', mouse_move_delta: 'mouse_move_delta',
+  mouse_drag: 'mouse_drag'
 };
 
 // 5. 执行指令
@@ -212,6 +261,15 @@ wss.on('connection', (ws) => {
             };
           } else if (cmdStr === 'open_web') {
             result.message = '打开网站/文件需要JSON格式';
+          } else if (keyMap[cmdStr] === 'TYPE_STRING') {
+            result.message = '输入文本需要JSON格式: {"type":"key_type","text":"..."} ';
+          } else if (keyMap[cmdStr].startsWith('SHIFT:')) {
+            robot.keyTap(keyMap[cmdStr].slice(6), ['shift']);
+            result = {
+              success: true,
+              command: cmdStr,
+              message: `执行成功: ${keyMap[cmdStr]}`
+            };
           } else {
             robot.keyTap(keyMap[cmdStr]);
             result = {
@@ -245,37 +303,19 @@ wss.on('connection', (ws) => {
       return;
     }
     
-    if (type === 'mouse_left_click' && data && data.x !== undefined && data.y !== undefined) {
+    if (type === 'mouse_left_click') {
       try {
-        robot.moveMouse(data.x, data.y);
         robot.mouseClick();
-        result = {
-          success: true,
-          command: type,
-          message: `执行成功: 鼠标左键点击 (${data.x}, ${data.y})`
-        };
+        result = { success: true, command: type, message: '执行成功: 鼠标左键点击' };
       } catch (error) {
-        result = {
-          success: false,
-          command: type,
-          message: `执行失败: ${error.message}`
-        };
+        result = { success: false, command: type, message: `执行失败: ${error.message}` };
       }
-    } else if (type === 'mouse_right_click' && data && data.x !== undefined && data.y !== undefined) {
+    } else if (type === 'mouse_right_click') {
       try {
-        robot.moveMouse(data.x, data.y);
         robot.mouseClick('right');
-        result = {
-          success: true,
-          command: type,
-          message: `执行成功: 鼠标右键点击 (${data.x}, ${data.y})`
-        };
+        result = { success: true, command: type, message: '执行成功: 鼠标右键点击' };
       } catch (error) {
-        result = {
-          success: false,
-          command: type,
-          message: `执行失败: ${error.message}`
-        };
+        result = { success: false, command: type, message: `执行失败: ${error.message}` };
       }
     } else if (type === 'mouse_move' && data && data.x !== undefined && data.y !== undefined) {
       try {
@@ -284,6 +324,22 @@ wss.on('connection', (ws) => {
           success: true,
           command: type,
           message: `执行成功: 鼠标移动到 (${data.x}, ${data.y})`
+        };
+      } catch (error) {
+        result = {
+          success: false,
+          command: type,
+          message: `执行失败: ${error.message}`
+        };
+      }
+    } else if (type === 'mouse_move_delta' && data && data.dx !== undefined && data.dy !== undefined) {
+      try {
+        const pos = robot.getMousePos();
+        robot.moveMouse(Math.max(0, pos.x + data.dx), Math.max(0, pos.y + data.dy));
+        result = {
+          success: true,
+          command: type,
+          message: `执行成功: 鼠标相对移动 (${data.dx}, ${data.dy})`
         };
       } catch (error) {
         result = {
@@ -356,6 +412,30 @@ wss.on('connection', (ws) => {
           message: `执行失败: ${error.message}`
         };
       }
+    } else if (type === 'key_type' && data && data.text) {
+      try {
+        const text = String(data.text);
+        // 逐字输入，连续相同字符之间加延迟，避免被操作系统合并
+        for (let i = 0; i < text.length; i++) {
+          robot.typeString(text[i]);
+          // 如果下一个字符与当前字符相同，等待 30ms
+          if (i < text.length - 1 && text[i] === text[i + 1]) {
+            const end = Date.now() + 30;
+            while (Date.now() < end) { /* wait */ }
+          }
+        }
+        result = {
+          success: true,
+          command: type,
+          message: `执行成功: 输入文本 (${text.length} 字符)`
+        };
+      } catch (error) {
+        result = {
+          success: false,
+          command: type,
+          message: `执行失败: ${error.message}`
+        };
+      }
     } else if (keyMap[type]) {
       try {
         if (type === 'ctrl_r') {
@@ -405,6 +485,13 @@ wss.on('connection', (ws) => {
             success: true,
             command: type,
             message: '执行成功: Ctrl+PgDn'
+          };
+        } else if (keyMap[type].startsWith('SHIFT:')) {
+          robot.keyTap(keyMap[type].slice(6), ['shift']);
+          result = {
+            success: true,
+            command: type,
+            message: `执行成功: ${keyMap[type]}`
           };
         } else {
           robot.keyTap(keyMap[type]);

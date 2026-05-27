@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ControlTV Remote</title>
+<style>
+:root {
+  --bg: #0d0d0d;
+  --surface: #1a1a1a;
+  --surface-2: #242424;
+  --border: #2e2e2e;
+  --text: #e4e4e4;
+  --text-2: #888;
+  --accent: #3b82f6;
+  --accent-glow: rgba(59,130,246,0.15);
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --key-bg: #2a2a2a;
+  --key-hover: #3a3a3a;
+  --key-active: #1a1a1a;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --transition: 150ms ease;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ========== Layout ========== */
+.app { display:flex; height:100dvh; }
+
+/* --- Sidebar (desktop) --- */
+.sidebar {
+  width: 280px; min-width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 20px;
+  overflow-y: auto;
+}
+
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 18px; font-weight: 700; letter-spacing: -0.3px;
+  color: var(--text);
+}
+.sidebar-brand .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--danger); transition: background var(--transition);
+}
+.sidebar-brand .dot.online { background: var(--success); }
+
+.sidebar-section { display:flex; flex-direction:column; gap:8px; }
+.sidebar-section label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-2);
+}
+.sidebar-section input {
+  width: 100%; padding: 10px 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 14px; outline: none; transition: border var(--transition);
+}
+.sidebar-section input:focus { border-color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; padding: 10px 16px;
+  border: none; border-radius: var(--radius-sm);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-connect { background: var(--accent); color: #fff; width: 100%; }
+.btn-connect:hover { background: #2563eb; }
+.btn-connect.connected { background: var(--success); }
+.btn-connect.connected:hover { background: #16a34a; }
+
+.status-bar {
+  margin-top: auto; padding: 12px;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--text-2); text-align: center;
+}
+.status-bar .cmd { color: var(--accent); display: block; margin-top: 4px; font-size: 11px; }
+
+/* --- Main Content --- */
+.main {
+  flex: 1; display: flex; flex-direction: column;
+  min-width: 0; overflow: hidden;
+  min-height: 0;
+}
+
+/* --- Tabs (desktop) --- */
+.tabs-desktop {
+  display: flex; gap: 2px;
+  padding: 12px 16px 0; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  padding: 10px 20px; border: none; background: none;
+  color: var(--text-2); font-size: 13px; font-weight: 500;
+  cursor: pointer; border-radius: var(--radius) var(--radius) 0 0;
+  transition: all var(--transition); position: relative;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--accent); background: var(--surface);
+  box-shadow: 0 -2px 0 var(--accent) inset;
+}
+
+.tab-content {
+  flex: 1; overflow-y: auto; padding: 20px;
+  background: var(--surface);
+  display: none;
+}
+.tab-content.active { display: block; }
+
+/* --- Tabs (mobile) --- */
+.tabs-mobile {
+  display: none; background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 4px 8px env(safe-area-inset-bottom, 8px);
+  gap: 4px;
+}
+.tab-mobile-btn {
+  flex:1; display:flex; flex-direction:column; align-items:center;
+  gap:2px; padding:8px 4px; background:none; border:none;
+  color:var(--text-2); font-size:10px; cursor:pointer;
+  border-radius:var(--radius-sm); transition:all var(--transition);
+}
+.tab-mobile-btn.active { color:var(--accent); background:var(--accent-glow); }
+.tab-mobile-btn svg { width:20px; height:20px; }
+
+/* ========== Quick Controls ========== */
+.quick-grid {
+  display: grid;
+  grid-template-columns:repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.quick-btn {
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:16px 8px; background:var(--key-bg); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text); font-size:12px; font-weight:500;
+  cursor:pointer; transition:all var(--transition);
+}
+.quick-btn:hover { background:var(--key-hover); border-color:#444; }
+.quick-btn:active { background:var(--key-active); transform:scale(0.96); }
+.quick-btn .icon { font-size:20px; }
+.quick-btn.danger { color:var(--danger); }
+.quick-btn.danger:hover { background:rgba(239,68,68,0.1); border-color:var(--danger); }
+
+.section-title {
+  font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-2);
+  margin: 20px 0 10px;
+}
+.section-title:first-child { margin-top:0; }
+
+/* ========== Navigation D-Pad ========== */
+.nav-container {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+}
+.dpad-row { display:flex; gap:4px; }
+.nav-btn {
+  width:56px; height:56px; display:flex; align-items:center; justify-content:center;
+  background:var(--key-bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+  color:var(--text); cursor:pointer; transition:all var(--transition);
+  font-size:16px;
+}
+.nav-btn:hover { background:var(--key-hover); }
+.nav-btn:active { background:var(--key-active); transform:scale(0.93); }
+.nav-btn.empty { background:transparent; border:none; pointer-events:none; }
+
+.edit-keys {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  margin-top: 16px;
+}
+.edit-key {
+  padding: 10px 16px; background: var(--key-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+  cursor: pointer; transition: all var(--transition);
+}
+.edit-key:hover { background: var(--key-hover); }
+.edit-key:active { background: var(--key-active); transform: scale(0.95); }
+.edit-key.wide { min-width: 80px; }
+.edit-key.esc { color: var(--warning); }
+.edit-key.del { color: var(--danger); }
+
+/* ========== Keyboard ========== */
+.keyboard { display:flex; flex-direction:column; gap:5px; max-width:800px; margin:0 auto; }
+
+.type-text-area {
+  display:flex; gap:8px; margin-bottom:12px;
+}
+.type-text-area input {
+  flex:1; padding:10px 12px;
+  background:var(--surface-2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); color:var(--text);
+  font-size:14px; outline:none; transition:border var(--transition);
+}
+.type-text-area input:focus { border-color:var(--accent); }
+.type-text-area button {
+  padding:10px 20px; background:var(--accent); border:none;
+  border-radius:var(--radius-sm); color:#fff; font-size:13px; font-weight:600;
+  cursor:pointer; white-space:nowrap; transition:all var(--transition);
+}
+.type-text-area button:hover { background:#2563eb; }
+.type-text-area button:active { transform:scale(0.96); }
+
+.kb-row { display:flex; gap:4px; }
+.kb-key {
+  flex:1; min-width:0; height:42px; display:flex; align-items:center; justify-content:center;
+  background:var(--key-bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+  color:var(--text); font-size:13px; font-weight:500; cursor:pointer;
+  transition:all var(--transition);
+}
+.kb-key:hover { background:var(--key-hover); border-color:#444; }
+.kb-key:active { background:var(--key-active); transform:scale(0.93); color:var(--accent); }
+.kb-key.w1-5 { flex:1.5; }
+.kb-key.w2 { flex:2; }
+.kb-key.w3 { flex:3; }
+.kb-key.fn { font-size:11px; color:var(--text-2); height:34px; }
+.kb-key.sym { font-size:12px; color:var(--accent); height:34px; }
+
+/* ========== Mouse ========== */
+.mouse-section { display:flex; flex-direction:column; gap:16px; align-items:center; }
+.trackpad {
+  width:100%; max-width:400px; aspect-ratio:16/11;
+  background:var(--key-bg); border:1px solid var(--border);
+  border-radius:var(--radius-lg); cursor:crosshair;
+  position:relative; overflow:hidden;
+}
+.trackpad-indicator {
+  position:absolute; width:8px; height:8px;
+  background:var(--accent); border-radius:50%;
+  transform:translate(-50%,-50%); pointer-events:none;
+  opacity:0; transition:opacity 0.2s;
+}
+.trackpad:active .trackpad-indicator { opacity:1; }
+.mouse-hint {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  color:var(--text-2); font-size:13px; pointer-events:none;
+}
+.trackpad:active .mouse-hint { display:none; }
+
+.mouse-btns { display:flex; gap:10px; width:100%; max-width:400px; }
+.mouse-btn {
+  flex:1; padding:14px; background:var(--key-bg); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text); font-size:13px; font-weight:500;
+  cursor:pointer; transition:all var(--transition); text-align:center;
+}
+.mouse-btn:hover { background:var(--key-hover); }
+.mouse-btn:active { background:var(--key-active); transform:scale(0.96); }
+.mouse-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.mouse-btn.primary:hover { background:#2563eb; }
+
+/* --- D-Pad --- */
+.dpad {
+  display:grid; grid-template-columns:64px 64px 64px; grid-template-rows:64px 64px 64px;
+  gap:4px; justify-content:center;
+}
+.dpad-btn {
+  width:64px; height:64px;
+  background:var(--key-bg); border:1px solid var(--border);
+  border-radius:var(--radius); color:var(--text);
+  font-size:22px; cursor:pointer; transition:all 0.1s;
+  display:flex; align-items:center; justify-content:center;
+  user-select:none; -webkit-user-select:none;
+  touch-action:manipulation;
+}
+.dpad-btn:hover { background:var(--key-hover); border-color:#555; }
+.dpad-btn:active, .dpad-btn.pressing { background:var(--accent); border-color:var(--accent); color:#fff; transform:scale(0.92); }
+.dpad-center {
+  width:64px; height:64px;
+  background:transparent; border:none;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--text-2); font-size:11px;
+}
+/* D-pad grid placement */
+.dpad-up    { grid-column:2; grid-row:1; }
+.dpad-left  { grid-column:1; grid-row:2; }
+.dpad-center{ grid-column:2; grid-row:2; }
+.dpad-right { grid-column:3; grid-row:2; }
+.dpad-down  { grid-column:2; grid-row:3; }
+
+@media (max-width: 768px) {
+  .dpad { grid-template-columns:56px 56px 56px; grid-template-rows:56px 56px 56px; }
+  .dpad-btn, .dpad-center { width:56px; height:56px; }
+  .dpad-btn { font-size:20px; }
+}
+
+/* ========== Open Tab ========== */
+.open-form { display:flex; flex-direction:column; gap:12px; max-width:500px; }
+.open-form label { font-size:13px; font-weight:500; color:var(--text-2); }
+.open-form input {
+  padding:12px; background:var(--surface-2); border:1px solid var(--border);
+  border-radius:var(--radius-sm); color:var(--text); font-size:14px;
+  outline:none; transition:border var(--transition);
+}
+.open-form input:focus { border-color:var(--accent); }
+.open-form button {
+  padding:12px 24px; background:var(--accent); border:none;
+  border-radius:var(--radius-sm); color:#fff; font-size:14px; font-weight:600;
+  cursor:pointer; transition:all var(--transition); align-self:flex-start;
+}
+.open-form button:hover { background:#2563eb; }
+
+/* ========== Toast ========== */
+.toast-container {
+  position:fixed; top:20px; right:20px; z-index:9999;
+  display:flex; flex-direction:column; gap:8px; pointer-events:none;
+}
+.toast {
+  padding:10px 16px; border-radius:var(--radius-sm); font-size:13px;
+  color:#fff; pointer-events:auto; animation:toastIn 0.3s ease;
+  max-width:300px;
+}
+.toast.ok { background:rgba(34,197,94,0.9); }
+.toast.err { background:rgba(239,68,68,0.9); }
+.toast.info { background:rgba(59,130,246,0.9); }
+@keyframes toastIn {
+  from { opacity:0; transform:translateX(20px); }
+  to { opacity:1; transform:translateX(0); }
+}
+@keyframes toastOut {
+  from { opacity:1; transform:translateX(0); }
+  to { opacity:0; transform:translateX(20px); }
+}
+
+/* --- Top bar (mobile) --- */
+.top-bar {
+  display:none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.top-bar .dot { width:10px; height:10px; border-radius:50%; background:var(--text-2); flex-shrink:0; }
+.top-bar .dot.online { background: var(--success); }
+.top-bar input {
+  flex:1; min-width:0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 10px; border-radius: var(--radius-sm);
+  font-size: 14px; outline: none; transition: border var(--transition);
+}
+.top-bar input:focus { border-color: var(--accent); }
+.top-bar .btn-connect {
+  padding: 8px 14px; font-size: 13px; flex-shrink:0;
+}
+.top-bar .status-bar { display:none; }
+
+/* ========== Responsive ========== */
+@media (max-width: 768px) {
+  .sidebar { display:none; }
+  .top-bar { display:flex; }
+  .tabs-desktop { display:none; }
+  .tabs-mobile { display:flex; }
+  .tab-content { border-radius:0; padding:12px; overflow-x:hidden; overflow-y:auto; }
+  #tab-keyboard.tab-content { overflow-x:auto; overflow-y:visible; }
+  .main { background:var(--surface); overflow-x:hidden; overflow-y:auto; }
+
+  .quick-grid { grid-template-columns:repeat(3, 1fr); gap:6px; }
+  .quick-btn { padding:12px 6px; font-size:11px; }
+  .quick-btn .icon { font-size:16px; }
+
+  .nav-btn { width:48px; height:48px; font-size:14px; }
+  .edit-key { padding:8px 12px; font-size:12px; }
+
+  /* Keyboard: scrollable on mobile to prevent squeezing */
+  .keyboard { overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+  .kb-row { flex-wrap:nowrap; min-width:580px; }
+  .kb-key { height:36px; font-size:12px; flex-shrink:0; min-width:28px; }
+  .kb-key.fn { height:0; overflow:hidden; }
+  .kb-row.fn-row { display:none; }
+  .kb-row.sym-row { display:none; }
+  .type-text-area input { font-size:13px; }
+
+  .trackpad { max-width:100%; }
+}
+
+@media (min-width: 769px) {
+  .tabs-mobile { display:none; }
+}
+
+@media (max-width: 400px) {
+  .quick-grid { grid-template-columns:repeat(2, 1fr); }
+  .kb-row { min-width:520px; }
+  .kb-key { height:32px; font-size:11px; min-width:24px; }
+  .kb-key.w1-5 { flex:0 0 36px; }
+  .kb-key.w2 { flex:0 0 48px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== TOP BAR (mobile) ===== -->
+  <div class="top-bar" id="topBar">
+    <span class="dot" id="dotStatusMobile"></span>
+    <input id="inputIPMobile" type="text" placeholder="192.168.x.x:8080" value="">
+    <button class="btn btn-connect" id="btnConnectMobile" onclick="toggleConnectMobile()">Connect</button>
+  </div>
+
+  <!-- ===== SIDEBAR (desktop) ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="dot" id="dotStatus"></span>
+      <span>ControlTV</span>
+    </div>
+    <div class="sidebar-section">
+      <label>Device</label>
+      <input id="inputIP" type="text" placeholder="192.168.x.x:8080" value="">
+    </div>
+    <button class="btn btn-connect" id="btnConnect" onclick="toggleConnect()">Connect</button>
+    <div class="status-bar">
+      <span id="statusText">Not connected</span>
+      <span class="cmd" id="lastCmd">--</span>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+    <!-- Desktop tabs -->
+    <nav class="tabs-desktop" id="tabsDesktop">
+      <button class="tab-btn active" data-tab="quick">Quick</button>
+      <button class="tab-btn" data-tab="nav">Navigation</button>
+      <button class="tab-btn" data-tab="keyboard">Keyboard</button>
+      <button class="tab-btn" data-tab="mouse">Mouse</button>
+      <button class="tab-btn" data-tab="open">Open</button>
+    </nav>
+
+    <!-- Tab: Quick Controls -->
+    <div class="tab-content active" id="tab-quick">
+      <div class="section-title">Browser</div>
+      <div class="quick-grid">
+        <div class="quick-btn" data-cmd="ctrl_r"><span class="icon">&#x21bb;</span>Refresh</div>
+        <div class="quick-btn" data-cmd="ctrl_w"><span class="icon">&#x2715;</span>Close Tab</div>
+        <div class="quick-btn" data-cmd="ctrl_pgup"><span class="icon">&#x25c0;</span>Prev Tab</div>
+        <div class="quick-btn" data-cmd="ctrl_pgdn"><span class="icon">&#x25b6;</span>Next Tab</div>
+        <div class="quick-btn" data-cmd="key_f5"><span class="icon">&#x21bb;</span>F5</div>
+        <div class="quick-btn" data-cmd="key_f11"><span class="icon">&#x26f6;</span>Fullscreen</div>
+      </div>
+      <div class="section-title">System</div>
+      <div class="quick-grid">
+        <div class="quick-btn danger" data-cmd="alt_f4"><span class="icon">&#x2716;</span>Alt+F4</div>
+        <div class="quick-btn" data-cmd="win_tab"><span class="icon">&#x2750;</span>Win+Tab</div>
+        <div class="quick-btn" data-cmd="key_esc"><span class="icon">Esc</span>Escape</div>
+        <div class="quick-btn" data-cmd="vol_up"><span class="icon">&#x1f50a;</span>Vol+</div>
+        <div class="quick-btn" data-cmd="vol_down"><span class="icon">&#x1f508;</span>Vol-</div>
+      </div>
+    </div>
+
+    <!-- Tab: Navigation -->
+    <div class="tab-content" id="tab-nav">
+      <div class="nav-container">
+        <div class="dpad-row"><div class="nav-btn empty"></div><div class="nav-btn" data-cmd="arrow_up">&#x25b2;</div><div class="nav-btn empty"></div></div>
+        <div class="dpad-row"><div class="nav-btn" data-cmd="arrow_left">&#x25c0;</div><div class="nav-btn"></div><div class="nav-btn" data-cmd="arrow_right">&#x25b6;</div></div>
+        <div class="dpad-row"><div class="nav-btn empty"></div><div class="nav-btn" data-cmd="arrow_down">&#x25bc;</div><div class="nav-btn empty"></div></div>
+      </div>
+      <div class="edit-keys">
+        <div class="edit-key esc" data-cmd="key_esc">Esc</div>
+        <div class="edit-key wide" data-cmd="key_tab">Tab</div>
+        <div class="edit-key wide" data-cmd="key_enter">Enter</div>
+        <div class="edit-key wide" data-cmd="key_space">Space</div>
+        <div class="edit-key" data-cmd="key_backspace">&#x232b;</div>
+        <div class="edit-key del" data-cmd="key_delete">Del</div>
+        <div class="edit-key" data-cmd="key_insert">Ins</div>
+        <div class="edit-key" data-cmd="key_home">Home</div>
+        <div class="edit-key" data-cmd="key_end">End</div>
+        <div class="edit-key" data-cmd="key_pageup">PgUp</div>
+        <div class="edit-key" data-cmd="key_pagedown">PgDn</div>
+      </div>
+    </div>
+
+    <!-- Tab: Keyboard -->
+    <div class="tab-content" id="tab-keyboard">
+      <div class="type-text-area">
+        <input id="inputTypeText" type="text" placeholder="Paste password, URL, or path here...">
+        <button onclick="sendTypeText()">Type</button>
+      </div>
+      <div class="keyboard" id="keyboard"></div>
+    </div>
+
+    <!-- Tab: Mouse -->
+    <div class="tab-content" id="tab-mouse">
+      <div class="mouse-section">
+        <div class="trackpad" id="trackpad">
+          <div class="trackpad-indicator" id="trackpadIndicator"></div>
+          <span class="mouse-hint">Slide here to move cursor</span>
+        </div>
+        <div class="dpad">
+          <button class="dpad-btn dpad-up" data-dir="up">&#9650;</button>
+          <button class="dpad-btn dpad-left" data-dir="left">&#9664;</button>
+          <div class="dpad-center">MOVE</div>
+          <button class="dpad-btn dpad-right" data-dir="right">&#9654;</button>
+          <button class="dpad-btn dpad-down" data-dir="down">&#9660;</button>
+        </div>
+        <div class="mouse-btns">
+          <div class="mouse-btn primary" data-cmd="mouse_left">Left Click</div>
+          <div class="mouse-btn" data-cmd="mouse_right">Right Click</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Open -->
+    <div class="tab-content" id="tab-open">
+      <div class="open-form">
+        <label for="inputURL">Open URL (in browser)</label>
+        <input id="inputURL" type="text" placeholder="https://example.com">
+        <button onclick="sendOpenWeb()">Open URL</button>
+        <label for="inputFile" style="margin-top:16px;">Open Local File</label>
+        <input id="inputFile" type="text" placeholder="C:\path\to\file.exe">
+        <button onclick="sendOpenFile()">Open File</button>
+      </div>
+    </div>
+
+    <!-- Mobile tabs -->
+    <nav class="tabs-mobile" id="tabsMobile">
+      <button class="tab-mobile-btn active" data-tab="quick">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Quick
+      </button>
+      <button class="tab-mobile-btn" data-tab="nav">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
+        Nav
+      </button>
+      <button class="tab-mobile-btn" data-tab="keyboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h2M10 10h4M16 10h2M6 14h12"/></svg>
+        Keys
+      </button>
+      <button class="tab-mobile-btn" data-tab="mouse">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3l14 7-7 3-3 7z"/></svg>
+        Mouse
+      </button>
+      <button class="tab-mobile-btn" data-tab="open">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        Open
+      </button>
+    </nav>
+  </main>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ==================== State ====================
+let ws = null;
+let connected = false;
+
+// ==================== WebSocket ====================
+function toggleConnect() {
+  if (connected) { disconnect(); return; }
+  const ip = document.getElementById('inputIP').value.trim()
+          || document.getElementById('inputIPMobile').value.trim();
+  if (!ip) { toast('Please enter IP:port', 'err'); return; }
+  // Sync both inputs
+  document.getElementById('inputIP').value = ip;
+  document.getElementById('inputIPMobile').value = ip;
+  const url = ip.startsWith('ws://') ? ip : `ws://${ip}`;
+  connect(url);
+}
+
+// Mobile connect button (same logic, different DOM trigger)
+function toggleConnectMobile() { toggleConnect(); }
+
+function connect(url) {
+  try {
+    ws = new WebSocket(url);
+  } catch(e) { toast('Invalid address', 'err'); return; }
+
+  ws.onopen = () => {
+    connected = true;
+    updateUI();
+    toast('Connected', 'ok');
+    startHeartbeat();
+  };
+  ws.onclose = () => {
+    connected = false; ws = null;
+    updateUI();
+    toast('Disconnected', 'err');
+    stopHeartbeat();
+  };
+  ws.onerror = () => {
+    connected = false; ws = null;
+    updateUI();
+    toast('Connection failed', 'err');
+    stopHeartbeat();
+  };
+  ws.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'pong') return;
+      document.getElementById('lastCmd').textContent = data.message || data.command || 'ok';
+    } catch (_) {}
+  };
+}
+
+function disconnect() {
+  stopHeartbeat();
+  if (ws) { ws.close(); ws = null; }
+  connected = false;
+  updateUI();
+}
+
+let hbTimer = null;
+function startHeartbeat() {
+  stopHeartbeat();
+  hbTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 15000);
+}
+function stopHeartbeat() { if (hbTimer) { clearInterval(hbTimer); hbTimer = null; } }
+
+function sendCmd(cmd) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    toast('Not connected', 'err');
+    return;
+  }
+  document.getElementById('lastCmd').textContent = cmd;
+  ws.send(cmd);
+}
+
+function sendObj(obj) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    toast('Not connected', 'err');
+    return;
+  }
+  document.getElementById('lastCmd').textContent = obj.type || JSON.stringify(obj);
+  ws.send(JSON.stringify(obj));
+}
+
+function updateUI() {
+  const btn = document.getElementById('btnConnect');
+  const dot = document.getElementById('dotStatus');
+  const st = document.getElementById('statusText');
+  // Mobile elements
+  const btnM = document.getElementById('btnConnectMobile');
+  const dotM = document.getElementById('dotStatusMobile');
+  if (connected) {
+    btn.textContent = 'Disconnect';
+    btn.classList.add('connected');
+    dot.classList.add('online');
+    st.textContent = 'Connected';
+    if (btnM) { btnM.textContent = 'Disconnect'; btnM.classList.add('connected'); }
+    if (dotM) dotM.classList.add('online');
+  } else {
+    btn.textContent = 'Connect';
+    btn.classList.remove('connected');
+    dot.classList.remove('online');
+    st.textContent = 'Not connected';
+    document.getElementById('lastCmd').textContent = '--';
+    if (btnM) { btnM.textContent = 'Connect'; btnM.classList.remove('connected'); }
+    if (dotM) dotM.classList.remove('online');
+  }
+}
+
+// ==================== Toast ====================
+function toast(msg, type) {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => {
+    t.style.animation = 'toastOut 0.3s ease forwards';
+    setTimeout(() => t.remove(), 300);
+  }, 2000);
+}
+
+// ==================== Keyboard Layout ====================
+function buildKeyboard(containerId) {
+  const kb = document.getElementById(containerId);
+  // Row: F1-F12
+  const fnRow = ['f1','f2','f3','f4','f5','f6','f7','f8','f9','f10','f11','f12'];
+  appendRow(kb, fnRow, 'fn', 'fn-row', 'F');
+  // Row: num + symbols
+  appendRow(kb, ['`','1','2','3','4','5','6','7','8','9','0','-','=','backspace'], 'num', '', {backspace:'w2'});
+  // Row: Shift symbols  @#$%^&*()_+~
+  appendRow(kb, ['@','#','$','%','^','&','*','(',')','_','+','~',':'], 'sym', 'sym-row');
+  // Row: QWERTY
+  appendRow(kb, ['tab','q','w','e','r','t','y','u','i','o','p','[',']','\\'], 'alpha', '', {tab:'w1-5'});
+  // Row: ASDF
+  appendRow(kb, ['caps','a','s','d','f','g','h','j','k','l',';',"'",'enter'], 'alpha', '', {caps:'w1-5',enter:'w2'});
+  // Row: ZXCV
+  appendRow(kb, ['shift','z','x','c','v','b','n','m',',','.','/','','arrow_up'], 'alpha', '', {shift:'w2'});
+  // Row: Bottom modifiers
+  appendRow(kb, ['ctrl','win','alt','space','','arrow_left','arrow_down','arrow_right'], 'bottom', '', {space:'w3'});
+}
+
+function appendRow(kb, keys, cls, extraCls, prefix) {
+  const row = document.createElement('div');
+  row.className = `kb-row${extraCls?' '+extraCls:''}`;
+  const widths = arguments[4] || {};
+  keys.forEach(k => {
+    if (k === '') {
+      const empty = document.createElement('div');
+      empty.className = 'kb-key';
+      empty.style.visibility = 'hidden';
+      row.appendChild(empty);
+      return;
+    }
+
+    const btn = document.createElement('div');
+    btn.className = `kb-key ${cls} ${widths[k]||''}`;
+
+    // Display label
+    let label = k;
+    const displayMap = {
+      '`':'`', '-':'-', '=':'=', '[':'[', ']':']', '\\':'\\',
+      ';':';', "'":"'", ',':',', '.':'.', '/':'/',
+      'backspace':'Bksp', 'tab':'Tab',
+      'enter':'Enter', 'space':'',
+      'arrow_up':'Up', 'arrow_left':'Left', 'arrow_down':'Down', 'arrow_right':'Right',
+      'ctrl':'Ctrl', 'win':'Win', 'alt':'Alt', 'caps':'Caps', 'shift':'Shift'
+    };
+    if (displayMap[k] !== undefined) label = displayMap[k];
+    if (typeof label === 'string' && label.length === 1 && cls === 'fn') label = prefix + label.toUpperCase();
+
+    // Normalize command name for sending
+    const cmdMap = {
+      '`':'key_backtick', '-':'key_minus', '=':'key_equal',
+      '[':'key_bracket_left', ']':'key_bracket_right', '\\':'key_backslash',
+      ';':'key_semicolon', "'":'key_quote', ',':'key_comma', '.':'key_period', '/':'key_slash',
+      '@':'key_at', '#':'key_hash', '$':'key_dollar', '%':'key_percent',
+      '^':'key_caret', '&':'key_ampersand', '*':'key_asterisk',
+      '(':'key_paren_left', ')':'key_paren_right',
+      '_':'key_underscore', '+':'key_plus', '~':'key_tilde', ':':'key_colon',
+      'backspace':'key_backspace', 'tab':'key_tab', 'enter':'key_enter',
+      'arrow_up':'arrow_up', 'arrow_left':'arrow_left',
+      'arrow_down':'arrow_down', 'arrow_right':'arrow_right',
+      'caps':'key_caps', 'shift':'key_shift', 'ctrl':'key_ctrl',
+      'alt':'key_alt', 'win':'key_win', 'space':'key_space'
+    };
+    let cmd = k;
+    if (cmdMap[k]) cmd = cmdMap[k];
+    else if (/^[a-z]$/.test(k)) cmd = 'key_' + k;
+    else if (/^[0-9]$/.test(k)) cmd = 'key_' + k;
+    else if (/^f[0-9]+$/i.test(k)) cmd = 'key_' + k;
+
+    btn.dataset.cmd = cmd;
+    btn.textContent = label;
+
+    // Long press detection for modifiers (just send once)
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      sendCmd(btn.dataset.cmd);
+    });
+
+    row.appendChild(btn);
+  });
+  kb.appendChild(row);
+}
+
+buildKeyboard('keyboard');
+
+// ==================== Tab Switching ====================
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-mobile-btn').forEach(el => el.classList.remove('active'));
+
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector(`.tab-btn[data-tab="${name}"]`)?.classList.add('active');
+  document.querySelector(`.tab-mobile-btn[data-tab="${name}"]`)?.classList.add('active');
+}
+
+document.querySelectorAll('.tab-btn, .tab-mobile-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// ==================== Quick / Nav / Mouse button bindings ====================
+document.querySelectorAll('[data-cmd]').forEach(el => {
+  if (el.closest('#keyboard')) return; // keyboard handled separately
+  if (el.closest('#tab-mouse')) {
+    el.addEventListener('click', () => {
+      const cmd = el.dataset.cmd;
+      if (cmd === 'mouse_left' || cmd === 'mouse_right') {
+        const type = cmd === 'mouse_left' ? 'mouse_left_click' : 'mouse_right_click';
+        sendObj({ type });
+      } else {
+        sendCmd(cmd);
+      }
+    });
+  } else {
+    el.addEventListener('click', () => sendCmd(el.dataset.cmd));
+  }
+});
+
+// ==================== Mouse Trackpad ====================
+let mousePos = { x: 0, y: 0 };
+const trackpad = document.getElementById('trackpad');
+const indicator = document.getElementById('trackpadIndicator');
+
+trackpad.addEventListener('pointermove', (e) => {
+  const rect = trackpad.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / rect.width * 1920);
+  const y = Math.round((e.clientY - rect.top) / rect.height * 1080);
+  mousePos = { x, y };
+
+  indicator.style.left = (e.clientX - rect.left) + 'px';
+  indicator.style.top = (e.clientY - rect.top) + 'px';
+
+  // Send move
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    sendObj({ type: 'mouse_move', data: { x, y } });
+  }
+});
+
+// ==================== D-Pad (directional mouse) ====================
+const DPAD_STEP = 10;       // px per click
+const DPAD_INTERVAL = 50;   // ms between long-press moves
+const dpadTimers = {};
+
+document.querySelectorAll('.dpad-btn').forEach(btn => {
+  const dir = btn.dataset.dir;
+  const deltas = { up: [0, -DPAD_STEP], down: [0, DPAD_STEP], left: [-DPAD_STEP, 0], right: [DPAD_STEP, 0] };
+  const [dx, dy] = deltas[dir] || [0, 0];
+
+  const sendMove = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendObj({ type: 'mouse_move_delta', data: { dx, dy } });
+    }
+  };
+
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    btn.classList.add('pressing');
+    sendMove(); // immediate first step
+    dpadTimers[dir] = setInterval(sendMove, DPAD_INTERVAL);
+  });
+
+  btn.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    btn.classList.remove('pressing');
+    clearInterval(dpadTimers[dir]);
+    dpadTimers[dir] = null;
+  });
+
+  btn.addEventListener('pointerleave', (e) => {
+    btn.classList.remove('pressing');
+    clearInterval(dpadTimers[dir]);
+    dpadTimers[dir] = null;
+  });
+
+  btn.addEventListener('pointercancel', (e) => {
+    btn.classList.remove('pressing');
+    clearInterval(dpadTimers[dir]);
+    dpadTimers[dir] = null;
+  });
+});
+
+// ==================== Open Tab ====================
+function sendOpenWeb() {
+  const url = document.getElementById('inputURL').value.trim();
+  if (!url) { toast('Enter a URL', 'err'); return; }
+  sendObj({ type: 'open_web', data: { url } });
+}
+function sendOpenFile() {
+  const file = document.getElementById('inputFile').value.trim();
+  if (!file) { toast('Enter a file path', 'err'); return; }
+  sendObj({ type: 'open_web', data: { file_path: file } });
+}
+
+function sendTypeText() {
+  const text = document.getElementById('inputTypeText').value;
+  if (!text) { toast('Enter text to type', 'err'); return; }
+  sendObj({ type: 'key_type', data: { text: text } });
+  // Clear input after send
+  document.getElementById('inputTypeText').value = '';
+}
+
+// ==================== Init ====================
+updateUI();
+
+// Enter key to send type text
+document.getElementById('inputTypeText').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') sendTypeText();
+});
+
+// Auto-load saved IP (sync both inputs)
+const saved = localStorage.getItem('controltv_ip');
+if (saved) {
+  document.getElementById('inputIP').value = saved;
+  document.getElementById('inputIPMobile').value = saved;
+}
+// Sync IP changes between desktop and mobile inputs
+function syncIP(val) {
+  document.getElementById('inputIP').value = val;
+  document.getElementById('inputIPMobile').value = val;
+  localStorage.setItem('controltv_ip', val);
+}
+document.getElementById('inputIP').addEventListener('input', function() { syncIP(this.value); });
+document.getElementById('inputIPMobile').addEventListener('input', function() { syncIP(this.value); });
+</script>
+</body>
+</html>
