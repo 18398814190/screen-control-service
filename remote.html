@@ -238,25 +238,6 @@ html, body {
 
 /* ========== Mouse ========== */
 .mouse-section { display:flex; flex-direction:column; gap:16px; align-items:center; }
-.trackpad {
-  width:100%; max-width:400px; aspect-ratio:16/11;
-  background:var(--key-bg); border:1px solid var(--border);
-  border-radius:var(--radius-lg); cursor:crosshair;
-  position:relative; overflow:hidden;
-}
-.trackpad-indicator {
-  position:absolute; width:8px; height:8px;
-  background:var(--accent); border-radius:50%;
-  transform:translate(-50%,-50%); pointer-events:none;
-  opacity:0; transition:opacity 0.2s;
-}
-.trackpad:active .trackpad-indicator { opacity:1; }
-.mouse-hint {
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  color:var(--text-2); font-size:13px; pointer-events:none;
-}
-.trackpad:active .mouse-hint { display:none; }
-
 .mouse-btns { display:flex; gap:10px; width:100%; max-width:400px; }
 .mouse-btn {
   flex:1; padding:14px; background:var(--key-bg); border:1px solid var(--border);
@@ -391,7 +372,7 @@ html, body {
   .kb-row.sym-row { display:none; }
   .type-text-area input { font-size:13px; }
 
-  .trackpad { max-width:100%; }
+  .mouse-btns { max-width:100%; }
 }
 
 @media (min-width: 769px) {
@@ -435,6 +416,7 @@ html, body {
 }
 .screen-btn:hover { color: var(--text); background: var(--surface-2); }
 .screen-btn.paused { color: var(--warning); }
+.screen-btn.active { color: var(--warning); background: rgba(245,158,11,0.15); }
 
 .screen-canvas {
   position: relative;
@@ -444,22 +426,68 @@ html, body {
   min-height: 60px;
   background: #000;
   cursor: crosshair;
+  touch-action: none;
 }
 .screen-canvas img {
   display: block;
   max-width: 100%;
   max-height: 35vh;
   object-fit: contain;
+  pointer-events: none;
 }
 .screen-placeholder {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
   color: var(--text-2); font-size: 13px; pointer-events: none;
 }
+.screen-mode-badge {
+  display: none;
+  position: absolute; top: 8px; right: 8px;
+  background: var(--warning); color: #000; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 4px; pointer-events: none; z-index: 2;
+}
+.screen-canvas.right-mode .screen-mode-badge { display: block; }
+.screen-canvas.right-mode { cursor: not-allowed; }
+
+/* Screen fullscreen mode */
+.screen-preview.is-fullscreen {
+  position: fixed !important; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 10000; background: #000;
+  display: flex; flex-direction: column;
+  border: none; margin: 0;
+}
+.screen-preview.is-fullscreen .screen-canvas {
+  flex: 1; max-height: none; min-height: 0;
+}
+.screen-preview.is-fullscreen .screen-canvas img {
+  max-height: none; max-width: 100%; height: 100%; width: 100%;
+  object-fit: contain;
+}
+.screen-preview.is-fullscreen .screen-header {
+  position: absolute; top: 0; left: 0; right: 0;
+  z-index: 1; opacity: 0; transition: opacity 0.3s;
+  background: rgba(26,26,26,0.85);
+}
+.screen-preview.is-fullscreen:hover .screen-header,
+.screen-preview.is-fullscreen .screen-header:hover,
+.screen-preview.is-fullscreen .screen-header.show {
+  opacity: 1;
+}
+.screen-preview.is-fullscreen .screen-mode-badge {
+  font-size: 14px; padding: 4px 12px;
+}
+.screen-exit-hint {
+  display: none; position: absolute; bottom: 12px; left: 50%;
+  transform: translateX(-50%); color: rgba(255,255,255,0.4);
+  font-size: 12px; pointer-events: none;
+}
+.screen-preview.is-fullscreen .screen-exit-hint { display: block; }
 
 @media (max-width: 768px) {
   .screen-header { padding: 3px 10px; font-size: 10px; }
   .screen-canvas { max-height: 28vh; }
   .screen-canvas img { max-height: 28vh; }
+  .screen-preview.is-fullscreen .screen-canvas { max-height: none; }
+  .screen-preview.is-fullscreen .screen-canvas img { max-height: none; }
 }
 </style>
 </head>
@@ -493,14 +521,18 @@ html, body {
   <main class="main">
     <!-- Screen Preview -->
     <div class="screen-preview" id="screenPreview">
-      <div class="screen-header">
+      <div class="screen-header" id="screenHeader">
         <span class="screen-dot" id="screenDot"></span>
         <span class="screen-fps" id="screenFps">--</span>
+        <button class="screen-btn" id="screenRightBtn" onclick="toggleRightMode()" title="Right-click mode">&#x1F5B1;</button>
         <button class="screen-btn" id="screenPauseBtn" onclick="toggleScreenPause()" title="Pause / Resume">&#x23F8;</button>
+        <button class="screen-btn" id="screenFullBtn" onclick="toggleScreenFull()" title="Fullscreen">&#x26F6;</button>
       </div>
       <div class="screen-canvas" id="screenCanvas">
         <img id="screenImg" alt="Screen Preview" />
         <div class="screen-placeholder" id="screenPlaceholder">Connect to preview screen</div>
+        <div class="screen-mode-badge">右键模式</div>
+        <div class="screen-exit-hint">ESC 或点击退出按钮退出全屏</div>
       </div>
     </div>
 
@@ -568,10 +600,7 @@ html, body {
     <!-- Tab: Mouse -->
     <div class="tab-content" id="tab-mouse">
       <div class="mouse-section">
-        <div class="trackpad" id="trackpad">
-          <div class="trackpad-indicator" id="trackpadIndicator"></div>
-          <span class="mouse-hint">Slide here to move cursor</span>
-        </div>
+        <div class="section-title" style="margin-top:0">Directional Move</div>
         <div class="dpad">
           <button class="dpad-btn dpad-up" data-dir="up">&#9650;</button>
           <button class="dpad-btn dpad-left" data-dir="left">&#9664;</button>
@@ -579,6 +608,7 @@ html, body {
           <button class="dpad-btn dpad-right" data-dir="right">&#9654;</button>
           <button class="dpad-btn dpad-down" data-dir="down">&#9660;</button>
         </div>
+        <div class="section-title">Click</div>
         <div class="mouse-btns">
           <div class="mouse-btn primary" data-cmd="mouse_left">Left Click</div>
           <div class="mouse-btn" data-cmd="mouse_right">Right Click</div>
@@ -897,35 +927,7 @@ document.querySelectorAll('[data-cmd]').forEach(el => {
   }
 });
 
-// ==================== Mouse Trackpad ====================
-let mousePos = { x: 0, y: 0 };
-const trackpad = document.getElementById('trackpad');
-const indicator = document.getElementById('trackpadIndicator');
-
-trackpad.addEventListener('pointermove', (e) => {
-  const rect = trackpad.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / rect.width * screenRealW);
-  const y = Math.round((e.clientY - rect.top) / rect.height * screenRealH);
-  mousePos = { x, y };
-
-  indicator.style.left = (e.clientX - rect.left) + 'px';
-  indicator.style.top = (e.clientY - rect.top) + 'px';
-
-  // Send move
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    sendObj({ type: 'mouse_move', data: { x, y } });
-  }
-});
-
-// 单击/轻触 = 左键点击
-trackpad.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    sendObj({ type: 'mouse_left_click' });
-  }
-});
-
-// ==================== D-Pad (directional mouse) ====================
+// ==================== Mouse D-Pad ====================
 const DPAD_STEP = 10;       // px per click
 const DPAD_INTERVAL = 50;   // ms between long-press moves
 const dpadTimers = {};
@@ -1055,34 +1057,198 @@ function toggleScreenPause() {
   }
 }
 
-// Click interaction on screen preview image
-(function initScreenClick() {
-  const img = document.getElementById('screenImg');
-  if (!img) return;
+// ==================== Screen Interaction (mouse control on screen) ====================
+let screenRightMode = false;
 
-  let dblPending = false;
-  let dblTimer = null;
+function toggleRightMode() {
+  screenRightMode = !screenRightMode;
+  const canvas = document.getElementById('screenCanvas');
+  const btn = document.getElementById('screenRightBtn');
+  if (screenRightMode) {
+    canvas.classList.add('right-mode');
+    btn.classList.add('active');
+  } else {
+    canvas.classList.remove('right-mode');
+    btn.classList.remove('active');
+  }
+}
+
+// Fullscreen toggle
+let screenIsFull = false;
+function toggleScreenFull() {
+  const preview = document.getElementById('screenPreview');
+  const btn = document.getElementById('screenFullBtn');
+  screenIsFull = !screenIsFull;
+  if (screenIsFull) {
+    preview.classList.add('is-fullscreen');
+    btn.innerHTML = '&#x2715;';
+    btn.title = 'Exit Fullscreen';
+    // Try native fullscreen API too
+    if (preview.requestFullscreen) {
+      preview.requestFullscreen().catch(() => {});
+    }
+  } else {
+    preview.classList.remove('is-fullscreen');
+    btn.innerHTML = '&#x26F6;';
+    btn.title = 'Fullscreen';
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+}
+
+// Exit fullscreen on ESC or native fullscreen exit
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && screenIsFull) {
+    const preview = document.getElementById('screenPreview');
+    const btn = document.getElementById('screenFullBtn');
+    screenIsFull = false;
+    preview.classList.remove('is-fullscreen');
+    btn.innerHTML = '&#x26F6;';
+    btn.title = 'Fullscreen';
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && screenIsFull) {
+    toggleScreenFull();
+  }
+});
+
+(function initScreenInteraction() {
+  const canvas = document.getElementById('screenCanvas');
+  if (!canvas) return;
+
+  let isDragging = false;
+  let dragStartPos = null;
+  let pointerStartTime = 0;
+  let hasMoved = false;
+  let longPressTimer = null;
+  let longPressFired = false;
+  const MOVE_THRESHOLD = 8;
+  const LONG_PRESS_MS = 500;
 
   function getScreenPos(e) {
+    const img = document.getElementById('screenImg');
+    if (!img || !img.naturalWidth) return null;
     const rect = img.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const relY = (e.clientY - rect.top) / rect.height;
+    if (rect.width === 0 || rect.height === 0) return null;
+    const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const relY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
     return { x: Math.round(relX * screenRealW), y: Math.round(relY * screenRealH) };
   }
 
-  img.addEventListener('click', (e) => {
+  function clearLongPress() {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const pos = getScreenPos(e);
+    if (!pos) return;
+
+    dragStartPos = pos;
+    pointerStartTime = Date.now();
+    hasMoved = false;
+    longPressFired = false;
+
+    // Move mouse to position immediately
     sendObj({ type: 'mouse_move', data: { x: pos.x, y: pos.y } });
 
-    if (dblPending) {
-      // Double click: also left click
-      setTimeout(() => sendObj({ type: 'mouse_left_click' }), 50);
-      dblPending = false;
-      clearTimeout(dblTimer);
-    } else {
-      dblPending = true;
-      dblTimer = setTimeout(() => { dblPending = false; }, 350);
+    // Long press detection (for right-click on mobile)
+    longPressTimer = setTimeout(() => {
+      if (!hasMoved) {
+        longPressFired = true;
+        sendObj({ type: 'mouse_right_click' });
+        toast('右键点击', 'info');
+      }
+    }, LONG_PRESS_MS);
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragStartPos || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const pos = getScreenPos(e);
+    if (!pos) return;
+    const dx = pos.x - dragStartPos.x;
+    const dy = pos.y - dragStartPos.y;
+
+    if (!hasMoved && (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD)) {
+      hasMoved = true;
+      clearLongPress();
+      // Start drag
+      isDragging = true;
+      sendObj({ type: 'mouse_toggle', data: { state: 'down', button: 'left' } });
+    }
+
+    if (hasMoved) {
+      // Live drag: keep moving mouse
+      sendObj({ type: 'mouse_move', data: { x: pos.x, y: pos.y } });
+    }
+  });
+
+  function handlePointerUp(e) {
+    clearLongPress();
+    if (!dragStartPos) return;
+
+    const duration = Date.now() - pointerStartTime;
+
+    if (isDragging) {
+      // End drag
+      sendObj({ type: 'mouse_toggle', data: { state: 'up', button: 'left' } });
+    } else if (!longPressFired && duration < LONG_PRESS_MS) {
+      // Short tap = click (left or right depending on mode)
+      if (screenRightMode) {
+        sendObj({ type: 'mouse_right_click' });
+      } else {
+        sendObj({ type: 'mouse_left_click' });
+      }
+    }
+
+    isDragging = false;
+    dragStartPos = null;
+    hasMoved = false;
+    longPressFired = false;
+  }
+
+  canvas.addEventListener('pointerup', handlePointerUp);
+  canvas.addEventListener('pointercancel', handlePointerUp);
+  canvas.addEventListener('pointerleave', (e) => {
+    if (isDragging) {
+      clearLongPress();
+      sendObj({ type: 'mouse_toggle', data: { state: 'up', button: 'left' } });
+      isDragging = false;
+      dragStartPos = null;
+      hasMoved = false;
+    }
+  });
+
+  // Right-click on desktop (contextmenu event)
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const pos = getScreenPos(e);
+    if (!pos) return;
+    sendObj({ type: 'mouse_move', data: { x: pos.x, y: pos.y } });
+    setTimeout(() => sendObj({ type: 'mouse_right_click' }), 30);
+  });
+
+  // Mouse wheel → scroll
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const amount = e.deltaY > 0 ? -3 : (e.deltaY < 0 ? 3 : 0);
+    if (amount !== 0) {
+      sendObj({ type: 'mouse_scroll', data: { amount } });
+    }
+  }, { passive: false });
+
+  // Show header on touch in fullscreen
+  canvas.addEventListener('pointerdown', () => {
+    const header = document.getElementById('screenHeader');
+    if (screenIsFull && header) {
+      header.classList.add('show');
+      setTimeout(() => header.classList.remove('show'), 2000);
     }
   });
 })();

@@ -68,7 +68,7 @@ function getLocalIP() {
   if (CLI_CONFIG.ipAddress) {
     return CLI_CONFIG.ipAddress;
   }
-  
+
   const interfaces = os.networkInterfaces();
   let fallback = null;
 
@@ -177,7 +177,8 @@ const keyMap = {
   // ==================== 鼠标控制（需 JSON 格式） ====================
   mouse_left_click: 'mouse_left', mouse_right_click: 'mouse_right',
   mouse_move: 'mouse_move', mouse_move_delta: 'mouse_move_delta',
-  mouse_drag: 'mouse_drag'
+  mouse_drag: 'mouse_drag', mouse_toggle: 'mouse_toggle',
+  mouse_scroll: 'mouse_scroll'
 };
 
 // ==================== 屏幕捕获（screenshot-desktop 系统级截图，DPI 正确） ====================
@@ -197,18 +198,19 @@ async function captureScreen() {
   try {
     const pngBuf = await screenshot({ format: 'png' });
     const { width, height } = getPngSize(pngBuf);
-    return { width, height, realWidth: width, realHeight: height, base64: pngBuf.toString('base64') };
+    const screenSize = robot.getScreenSize();
+    return { width, height, realWidth: screenSize.width, realHeight: screenSize.height, base64: pngBuf.toString('base64') };
   } catch (e) { console.error('[screen] capture error:', e.message); return null; }
 }
 
 // 5. 执行指令
 wss.on('connection', (ws) => {
   console.log(`📱 平板已连接 ${DEVICE_NAME}`);
-  
+
   // 心跳相关变量
   let heartbeatTimeoutTimer = null;
   let isAlive = true;
-  
+
   // 重置心跳超时计时器
   function resetHeartbeatTimeout() {
     if (heartbeatTimeoutTimer) {
@@ -220,13 +222,13 @@ wss.on('connection', (ws) => {
       ws.terminate();
     }, HEARTBEAT_TIMEOUT);
   }
-  
+
   // 启动心跳（等待客户端发送ping）
   function startHeartbeat() {
     // 立即开始计时，等待客户端ping
     resetHeartbeatTimeout();
   }
-  
+
   // 停止心跳
   function stopHeartbeat() {
     if (heartbeatTimeoutTimer) {
@@ -234,7 +236,7 @@ wss.on('connection', (ws) => {
       heartbeatTimeoutTimer = null;
     }
   }
-  
+
   // 启动心跳检测
   startHeartbeat();
 
@@ -282,7 +284,7 @@ wss.on('connection', (ws) => {
       command: '',
       message: '未知指令格式'
     };
-    
+
     try {
       // 尝试解析JSON格式指令
       cmdData = JSON.parse(cmd.toString());
@@ -372,11 +374,11 @@ wss.on('connection', (ws) => {
       ws.send(JSON.stringify(result));
       return;
     }
-    
+
     // 处理JSON格式指令
     const { type, data } = cmdData;
     result.command = type;
-    
+
     // 处理心跳响应（客户端发送ping，服务端回复pong）
     if (type === 'ping') {
       resetHeartbeatTimeout();
@@ -395,7 +397,7 @@ wss.on('connection', (ws) => {
       screenEnabled = true;
       return;
     }
-    
+
     if (type === 'mouse_left_click') {
       try {
         robot.mouseClick();
@@ -450,6 +452,20 @@ wss.on('connection', (ws) => {
           command: type,
           message: `执行失败: ${error.message}`
         };
+      }
+    } else if (type === 'mouse_toggle' && data && data.state) {
+      try {
+        robot.mouseToggle(data.state, data.button || 'left');
+        result = { success: true, command: type, message: `执行成功: 鼠标${data.state === 'down' ? '按下' : '释放'}` };
+      } catch (error) {
+        result = { success: false, command: type, message: `执行失败: ${error.message}` };
+      }
+    } else if (type === 'mouse_scroll' && data && data.amount !== undefined) {
+      try {
+        robot.scrollMouse(0, data.amount);
+        result = { success: true, command: type, message: `执行成功: 滚动 ${data.amount}` };
+      } catch (error) {
+        result = { success: false, command: type, message: `执行失败: ${error.message}` };
       }
     } else if (type === 'open_web' && data) {
       try {
@@ -594,16 +610,16 @@ wss.on('connection', (ws) => {
         };
       }
     }
-    
+
     ws.send(JSON.stringify(result));
   });
-  
+
   ws.on('close', () => {
     stopScreenStream();
     stopHeartbeat();
     console.log(`📱 平板断开 ${DEVICE_NAME}`);
   });
-  
+
   ws.on('error', (error) => {
     stopScreenStream();
     console.log(`❌ WebSocket错误 ${DEVICE_NAME}:`, error.message);
