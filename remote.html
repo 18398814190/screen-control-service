@@ -405,6 +405,62 @@ html, body {
   .kb-key.w1-5 { flex:0 0 36px; }
   .kb-key.w2 { flex:0 0 48px; }
 }
+
+/* ========== Screen Preview ========== */
+.screen-preview {
+  flex-shrink: 0;
+  background: #000;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.screen-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--text-2);
+}
+.screen-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-2); flex-shrink: 0;
+  transition: background 0.3s;
+}
+.screen-dot.live { background: var(--success); }
+.screen-dot.paused { background: var(--warning); }
+.screen-fps { flex:1; font-variant-numeric:tabular-nums; }
+.screen-btn {
+  background: none; border: none; color: var(--text-2);
+  cursor: pointer; font-size: 14px; padding: 2px 4px;
+  border-radius: 4px; transition: all var(--transition);
+}
+.screen-btn:hover { color: var(--text); background: var(--surface-2); }
+.screen-btn.paused { color: var(--warning); }
+
+.screen-canvas {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  max-height: 35vh;
+  min-height: 60px;
+  background: #000;
+  cursor: crosshair;
+}
+.screen-canvas img {
+  display: block;
+  max-width: 100%;
+  max-height: 35vh;
+  object-fit: contain;
+}
+.screen-placeholder {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: var(--text-2); font-size: 13px; pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .screen-header { padding: 3px 10px; font-size: 10px; }
+  .screen-canvas { max-height: 28vh; }
+  .screen-canvas img { max-height: 28vh; }
+}
 </style>
 </head>
 <body>
@@ -435,6 +491,19 @@ html, body {
 
   <!-- ===== MAIN ===== -->
   <main class="main">
+    <!-- Screen Preview -->
+    <div class="screen-preview" id="screenPreview">
+      <div class="screen-header">
+        <span class="screen-dot" id="screenDot"></span>
+        <span class="screen-fps" id="screenFps">--</span>
+        <button class="screen-btn" id="screenPauseBtn" onclick="toggleScreenPause()" title="Pause / Resume">&#x23F8;</button>
+      </div>
+      <div class="screen-canvas" id="screenCanvas">
+        <img id="screenImg" alt="Screen Preview" />
+        <div class="screen-placeholder" id="screenPlaceholder">Connect to preview screen</div>
+      </div>
+    </div>
+
     <!-- Desktop tabs -->
     <nav class="tabs-desktop" id="tabsDesktop">
       <button class="tab-btn active" data-tab="quick">Quick</button>
@@ -606,6 +675,10 @@ function connect(url) {
     try {
       const data = JSON.parse(e.data);
       if (data.type === 'pong') return;
+      if (data.type === 'screen_frame') {
+        handleScreenFrame(data);
+        return;
+      }
       document.getElementById('lastCmd').textContent = data.message || data.command || 'ok';
     } catch (_) {}
   };
@@ -654,6 +727,12 @@ function updateUI() {
   // Mobile elements
   const btnM = document.getElementById('btnConnectMobile');
   const dotM = document.getElementById('dotStatusMobile');
+  // Screen preview
+  const screenDot = document.getElementById('screenDot');
+  const screenPlaceholder = document.getElementById('screenPlaceholder');
+  const screenImg = document.getElementById('screenImg');
+  const screenPauseBtn = document.getElementById('screenPauseBtn');
+
   if (connected) {
     btn.textContent = 'Disconnect';
     btn.classList.add('connected');
@@ -661,6 +740,10 @@ function updateUI() {
     st.textContent = 'Connected';
     if (btnM) { btnM.textContent = 'Disconnect'; btnM.classList.add('connected'); }
     if (dotM) dotM.classList.add('online');
+    // Screen: live state
+    if (screenDot) screenDot.classList.add('live');
+    if (screenPlaceholder) screenPlaceholder.textContent = 'Waiting for frames...';
+    if (screenPauseBtn) screenPauseBtn.style.display = '';
   } else {
     btn.textContent = 'Connect';
     btn.classList.remove('connected');
@@ -669,6 +752,17 @@ function updateUI() {
     document.getElementById('lastCmd').textContent = '--';
     if (btnM) { btnM.textContent = 'Connect'; btnM.classList.remove('connected'); }
     if (dotM) dotM.classList.remove('online');
+    // Screen: reset
+    if (screenDot) { screenDot.classList.remove('live', 'paused'); }
+    if (screenPlaceholder) screenPlaceholder.textContent = 'Connect to preview screen';
+    if (screenImg) { screenImg.src = ''; screenImg.dataset._logged = ''; }
+    document.getElementById('screenFps').textContent = '--';
+    if (screenPauseBtn) screenPauseBtn.style.display = 'none';
+    screenPaused = false;
+    screenFrameCount = 0;
+    screenLastFpsTime = 0;
+    screenRealW = 1920;
+    screenRealH = 1080;
   }
 }
 
@@ -810,8 +904,8 @@ const indicator = document.getElementById('trackpadIndicator');
 
 trackpad.addEventListener('pointermove', (e) => {
   const rect = trackpad.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / rect.width * 1920);
-  const y = Math.round((e.clientY - rect.top) / rect.height * 1080);
+  const x = Math.round((e.clientX - rect.left) / rect.width * screenRealW);
+  const y = Math.round((e.clientY - rect.top) / rect.height * screenRealH);
   mousePos = { x, y };
 
   indicator.style.left = (e.clientX - rect.left) + 'px';
@@ -820,6 +914,14 @@ trackpad.addEventListener('pointermove', (e) => {
   // Send move
   if (ws && ws.readyState === WebSocket.OPEN) {
     sendObj({ type: 'mouse_move', data: { x, y } });
+  }
+});
+
+// 单击/轻触 = 左键点击
+trackpad.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    sendObj({ type: 'mouse_left_click' });
   }
 });
 
@@ -885,6 +987,105 @@ function sendTypeText() {
   // Clear input after send
   document.getElementById('inputTypeText').value = '';
 }
+
+// ==================== Screen Preview ====================
+let screenPaused = false;
+let screenFrameCount = 0;
+let screenLastFpsTime = 0;
+
+// 真实屏幕分辨率（从服务端每帧更新，初始默认 1920×1080）
+let screenRealW = 1920;
+let screenRealH = 1080;
+
+function handleScreenFrame(data) {
+  const img = document.getElementById('screenImg');
+  const placeholder = document.getElementById('screenPlaceholder');
+  const fpsEl = document.getElementById('screenFps');
+  const dot = document.getElementById('screenDot');
+
+  // Update image
+  img.src = 'data:image/png;base64,' + data.image;
+  img.style.display = 'block';
+  if (placeholder) placeholder.style.display = 'none';
+
+  // Store real dimensions for coordinate mapping
+  img.dataset.realWidth = data.realWidth;
+  img.dataset.realHeight = data.realHeight;
+  screenRealW = data.realWidth || 1920;
+  screenRealH = data.realHeight || 1080;
+
+  // 首帧打印真实分辨率（调试用）
+  if (!img.dataset._logged) {
+    img.dataset._logged = '1';
+    console.log('[screen] detected resolution: ' + screenRealW + 'x' + screenRealH);
+  }
+
+  // FPS counter
+  screenFrameCount++;
+  const now = performance.now();
+  if (!screenLastFpsTime) screenLastFpsTime = now;
+  if (now - screenLastFpsTime >= 1000) {
+    const fps = Math.round(screenFrameCount / ((now - screenLastFpsTime) / 1000));
+    fpsEl.textContent = fps + ' fps';
+    screenFrameCount = 0;
+    screenLastFpsTime = now;
+  }
+
+  // Dot status
+  if (dot && !screenPaused) {
+    dot.classList.add('live');
+    dot.classList.remove('paused');
+  }
+}
+
+function toggleScreenPause() {
+  screenPaused = !screenPaused;
+  const btn = document.getElementById('screenPauseBtn');
+  const dot = document.getElementById('screenDot');
+  if (screenPaused) {
+    sendObj({ type: 'screen_pause' });
+    btn.classList.add('paused');
+    btn.innerHTML = '&#x25B6;';
+    if (dot) { dot.classList.add('paused'); dot.classList.remove('live'); }
+  } else {
+    sendObj({ type: 'screen_resume' });
+    btn.classList.remove('paused');
+    btn.innerHTML = '&#x23F8;';
+    if (dot) { dot.classList.remove('paused'); }
+  }
+}
+
+// Click interaction on screen preview image
+(function initScreenClick() {
+  const img = document.getElementById('screenImg');
+  if (!img) return;
+
+  let dblPending = false;
+  let dblTimer = null;
+
+  function getScreenPos(e) {
+    const rect = img.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width;
+    const relY = (e.clientY - rect.top) / rect.height;
+    return { x: Math.round(relX * screenRealW), y: Math.round(relY * screenRealH) };
+  }
+
+  img.addEventListener('click', (e) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const pos = getScreenPos(e);
+    sendObj({ type: 'mouse_move', data: { x: pos.x, y: pos.y } });
+
+    if (dblPending) {
+      // Double click: also left click
+      setTimeout(() => sendObj({ type: 'mouse_left_click' }), 50);
+      dblPending = false;
+      clearTimeout(dblTimer);
+    } else {
+      dblPending = true;
+      dblTimer = setTimeout(() => { dblPending = false; }, 350);
+    }
+  });
+})();
 
 // ==================== Init ====================
 updateUI();

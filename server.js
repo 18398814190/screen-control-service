@@ -3,6 +3,7 @@ const robot = require('@jitsi/robotjs');
 const os = require('os');
 const dgram = require('dgram');
 const { exec } = require('child_process');
+const screenshot = require('screenshot-desktop');
 
 // ===================== 解析命令行参数 =====================
 function parseArgs() {
@@ -179,6 +180,27 @@ const keyMap = {
   mouse_drag: 'mouse_drag'
 };
 
+// ==================== 屏幕捕获（screenshot-desktop 系统级截图，DPI 正确） ====================
+const SCREEN_FPS = 5;
+const SCREEN_INTERVAL = Math.round(1000 / SCREEN_FPS);
+
+// 鼠标移动节流：限制处理频率，避免高频 mouse_move_delta 阻塞事件循环
+const MOUSE_MOVE_THROTTLE_MS = 50;  // 最多每 50ms 处理一次鼠标移动
+let lastMouseMoveTime = 0;
+
+// 从 PNG buffer 头部解析宽高（IHDR chunk，offset 16）
+function getPngSize(buf) {
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+async function captureScreen() {
+  try {
+    const pngBuf = await screenshot({ format: 'png' });
+    const { width, height } = getPngSize(pngBuf);
+    return { width, height, realWidth: width, realHeight: height, base64: pngBuf.toString('base64') };
+  } catch (e) { console.error('[screen] capture error:', e.message); return null; }
+}
+
 // 5. 执行指令
 wss.on('connection', (ws) => {
   console.log(`📱 平板已连接 ${DEVICE_NAME}`);
@@ -215,7 +237,44 @@ wss.on('connection', (ws) => {
   
   // 启动心跳检测
   startHeartbeat();
-  
+
+  // ============ 屏幕推流 ============
+  let screenInterval = null;
+  let screenEnabled = true;
+  let screenBusy = false;  // 上一帧发送未完成时跳过当前帧，防止积压
+
+  function startScreenStream() {
+    if (screenInterval) return;
+    screenInterval = setInterval(async () => {
+      if (!screenEnabled || screenBusy) return;
+      screenBusy = true;
+      try {
+        const frame = await captureScreen();
+        if (frame && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'screen_frame',
+            width: frame.width,
+            height: frame.height,
+            realWidth: frame.realWidth,
+            realHeight: frame.realHeight,
+            image: frame.base64
+          }));
+        }
+      } finally {
+        screenBusy = false;
+      }
+    }, SCREEN_INTERVAL);
+  }
+
+  function stopScreenStream() {
+    if (screenInterval) {
+      clearInterval(screenInterval);
+      screenInterval = null;
+    }
+  }
+
+  startScreenStream();
+
   ws.on('message', (cmd) => {
     let cmdData;
     let result = {
@@ -326,6 +385,16 @@ wss.on('connection', (ws) => {
       }
       return;
     }
+
+    // 屏幕推流控制
+    if (type === 'screen_pause') {
+      screenEnabled = false;
+      return;
+    }
+    if (type === 'screen_resume') {
+      screenEnabled = true;
+      return;
+    }
     
     if (type === 'mouse_left_click') {
       try {
@@ -342,36 +411,28 @@ wss.on('connection', (ws) => {
         result = { success: false, command: type, message: `执行失败: ${error.message}` };
       }
     } else if (type === 'mouse_move' && data && data.x !== undefined && data.y !== undefined) {
+      // 高频操作节流
+      const now = Date.now();
+      if (now - lastMouseMoveTime < MOUSE_MOVE_THROTTLE_MS) return;
+      lastMouseMoveTime = now;
       try {
         robot.moveMouse(data.x, data.y);
-        result = {
-          success: true,
-          command: type,
-          message: `执行成功: 鼠标移动到 (${data.x}, ${data.y})`
-        };
       } catch (error) {
-        result = {
-          success: false,
-          command: type,
-          message: `执行失败: ${error.message}`
-        };
+        console.error('[mouse] move error:', error.message);
       }
+      return;  // 高频操作不回复
     } else if (type === 'mouse_move_delta' && data && data.dx !== undefined && data.dy !== undefined) {
+      // 高频操作节流：限制到 MOUSE_MOVE_THROTTLE_MS 一次，且不回复减少发包
+      const now = Date.now();
+      if (now - lastMouseMoveTime < MOUSE_MOVE_THROTTLE_MS) return;  // 丢弃过密的消息
+      lastMouseMoveTime = now;
       try {
         const pos = robot.getMousePos();
         robot.moveMouse(Math.max(0, pos.x + data.dx), Math.max(0, pos.y + data.dy));
-        result = {
-          success: true,
-          command: type,
-          message: `执行成功: 鼠标相对移动 (${data.dx}, ${data.dy})`
-        };
       } catch (error) {
-        result = {
-          success: false,
-          command: type,
-          message: `执行失败: ${error.message}`
-        };
+        console.error('[mouse] move_delta error:', error.message);
       }
+      return;  // 高频操作不回复 result，减少 WebSocket 发送量
     } else if (type === 'mouse_drag' && data && data.startX !== undefined && data.startY !== undefined && data.endX !== undefined && data.endY !== undefined) {
       try {
         robot.moveMouse(data.startX, data.startY);
@@ -538,11 +599,13 @@ wss.on('connection', (ws) => {
   });
   
   ws.on('close', () => {
+    stopScreenStream();
     stopHeartbeat();
     console.log(`📱 平板断开 ${DEVICE_NAME}`);
   });
   
   ws.on('error', (error) => {
+    stopScreenStream();
     console.log(`❌ WebSocket错误 ${DEVICE_NAME}:`, error.message);
     stopHeartbeat();
   });
