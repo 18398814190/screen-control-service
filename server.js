@@ -12,7 +12,8 @@ function parseArgs() {
     deviceName: null,
     ipAddress: null,
     wsPort: 8080,
-    udpPort: 8888
+    udpPort: 8888,
+    deviceId: null
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -32,17 +33,22 @@ function parseArgs() {
       case '--udp-port':
         config.udpPort = parseInt(args[++i]);
         break;
+      case '--device-id':
+      case '-d':
+        config.deviceId = args[++i];
+        break;
       case '--help':
       case '-h':
         console.log(`
 Usage: ControlTV.exe [options]
 
 Options:
-  --name, -n <name>      Device name (e.g., Display-1)
-  --ip, -i <ip>          IP address (optional, auto-detect if not set)
-  --port, -p <port>      WebSocket port (default: 8080)
-  --udp-port <port>      UDP broadcast port (default: 8888)
-  --help, -h             Show help
+  --name, -n <name>       Device name (e.g., Display-1)
+  --ip, -i <ip>           IP address (optional, auto-detect if not set)
+  --port, -p <port>       WebSocket port (default: 8080)
+  --udp-port <port>       UDP broadcast port (default: 8888)
+  --device-id, -d <id>    Device ID (optional, included in UDP broadcast)
+  --help, -h              Show help
         `);
         process.exit(0);
         break;
@@ -58,31 +64,68 @@ const CLI_CONFIG = parseArgs();
 const DEVICE_NAME = CLI_CONFIG.deviceName || "大屏-1";
 const WEB_SOCKET_PORT = CLI_CONFIG.wsPort;
 const UDP_BROADCAST_PORT = CLI_CONFIG.udpPort;
+const DEVICE_ID = CLI_CONFIG.deviceId || '';
 const HEARTBEAT_TIMEOUT = 60000;
+
+// 打印配置信息
+console.log('========================================');
+console.log('  ControlTV 配置信息');
+console.log('========================================');
+console.log(`  设备名称 : ${DEVICE_NAME}`);
+console.log(`  配置IP   : ${CLI_CONFIG.ipAddress || '(未配置，自动获取)'}`);
+console.log(`  WS端口   : ${WEB_SOCKET_PORT}`);
+console.log(`  UDP端口  : ${UDP_BROADCAST_PORT}`);
+console.log(`  设备ID   : ${DEVICE_ID || '(未配置)'}`);
+console.log('========================================');
 
 // 目标子网前缀（限制 UDP 广播只走这个网段）
 const TARGET_SUBNET = '192.168.31.';
 
 // 1. 获取本机IP（优先匹配目标子网）
 function getLocalIP() {
+  // 如果配置了固定IP，直接使用
   if (CLI_CONFIG.ipAddress) {
+    console.log(`[IP] 使用配置的固定IP: ${CLI_CONFIG.ipAddress}`);
     return CLI_CONFIG.ipAddress;
   }
 
+  // 自动获取：优先 192.168.31.x 网段
   const interfaces = os.networkInterfaces();
-  let fallback = null;
+  const allIPs = [];       // 所有非内部IPv4
+  const subnetIPs = [];    // 目标子网的IP
 
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
+        allIPs.push({ name, address: iface.address });
         if (iface.address.startsWith(TARGET_SUBNET)) {
-          return iface.address;
+          subnetIPs.push({ name, address: iface.address });
         }
-        if (!fallback) fallback = iface.address;
       }
     }
   }
-  return fallback || '127.0.0.1';
+
+  // 打印所有检测到的网卡信息
+  console.log(`[IP] 检测到 ${allIPs.length} 个网卡:`);
+  allIPs.forEach(nic => {
+    const tag = nic.address.startsWith(TARGET_SUBNET) ? ' ★ 目标子网' : '';
+    console.log(`[IP]   ${nic.name}: ${nic.address}${tag}`);
+  });
+
+  // 优先返回目标子网的IP
+  if (subnetIPs.length > 0) {
+    console.log(`[IP] 选用目标子网IP: ${subnetIPs[0].address} (${subnetIPs[0].name})`);
+    return subnetIPs[0].address;
+  }
+
+  // 无目标子网IP，用第一个可用IP
+  if (allIPs.length > 0) {
+    console.log(`[IP] 未找到 ${TARGET_SUBNET}x 网段IP，使用: ${allIPs[0].address} (${allIPs[0].name})`);
+    return allIPs[0].address;
+  }
+
+  console.log('[IP] 未检测到任何网卡，回退 127.0.0.1');
+  return '127.0.0.1';
 }
 const LOCAL_IP = getLocalIP();
 
@@ -97,15 +140,18 @@ function getBroadcastIP() {
 }
 const BROADCAST_IP = getBroadcastIP();
 
-// 2. UDP广播：每2秒向目标子网发送【设备名称+IP】（平板自动搜索）
+// 2. UDP广播：每2秒向目标子网发送【设备名称+IP+设备ID】（平板自动搜索）
+const udpMsg = { name: DEVICE_NAME, ip: LOCAL_IP, port: WEB_SOCKET_PORT };
+if (DEVICE_ID) udpMsg.device_id = DEVICE_ID;
+
 const udpClient = dgram.createSocket('udp4');
 udpClient.bind({ address: LOCAL_IP }, () => {
   udpClient.setBroadcast(true);
   console.log(`📡 UDP 广播: ${LOCAL_IP} → ${BROADCAST_IP}:${UDP_BROADCAST_PORT}`);
+  console.log(`📡 广播内容: ${JSON.stringify(udpMsg)}`);
 });
 setInterval(() => {
-  const msg = JSON.stringify({ name: DEVICE_NAME, ip: LOCAL_IP, port: WEB_SOCKET_PORT });
-  udpClient.send(Buffer.from(msg), UDP_BROADCAST_PORT, BROADCAST_IP);
+  udpClient.send(Buffer.from(JSON.stringify(udpMsg)), UDP_BROADCAST_PORT, BROADCAST_IP);
 }, 2000);
 
 // 3. WebSocket服务（接收平板指令）
